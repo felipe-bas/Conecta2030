@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="100dp"
+    android:height="100dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <!-- este path é o “cone” que vamos animar -->
+    <path
+        android:name="cone"
+        android:fillColor="@color/alert_red"
+        android:strokeColor="@android:color/transparent"
+        android:pathData="M0,0 L100,50 L0,100 Z" />
+</vector>

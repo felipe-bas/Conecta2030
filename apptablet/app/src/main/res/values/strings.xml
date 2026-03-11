@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">App</string>
+    <string name="desc_img_sensor">Área coberta por um sensor</string>
+    <string name="desc_img_carro">Um carro visto de cima</string>
+    <string name="desc_incoming_object">Objeto se aproximando</string>
+</resources>

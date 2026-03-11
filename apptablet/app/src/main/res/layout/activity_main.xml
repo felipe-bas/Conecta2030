@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <View
+        android:id="@+id/standbyPulse1"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:background="@drawable/standby_pulse_shape"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <View
+        android:id="@+id/standbyPulse2"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:background="@drawable/standby_pulse_shape"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <View
+        android:id="@+id/standbyPulse3"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:background="@drawable/standby_pulse_shape"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Carro no centro -->
+    <ImageView
+        android:id="@+id/carImg"
+        android:layout_width="120dp"
+        android:layout_height="245dp"
+        android:contentDescription="@string/desc_img_carro"
+        android:src="@drawable/black_car"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Objeto ESQUERDA -->
+    <ImageView
+        android:id="@+id/leftObject"
+        android:layout_width="82dp"
+        android:layout_height="82dp"
+        android:visibility="gone"
+        android:contentDescription="@string/desc_incoming_object"
+        app:layout_constraintStart_toStartOf="@id/leftPulse"
+        app:layout_constraintTop_toTopOf="@id/leftPulse"
+        app:layout_constraintBottom_toBottomOf="@id/leftPulse"
+        android:layout_marginStart="24dp"/>
+
+    <!-- Objeto DIREITA -->
+    <ImageView
+        android:id="@+id/rightObject"
+        android:layout_width="82dp"
+        android:layout_height="82dp"
+        android:visibility="gone"
+        android:contentDescription="@string/desc_incoming_object"
+        app:layout_constraintEnd_toEndOf="@id/rightPulse"
+        app:layout_constraintTop_toTopOf="@id/rightPulse"
+        app:layout_constraintBottom_toBottomOf="@id/rightPulse"
+        android:layout_marginEnd="24dp"/>
+
+    <!-- Objeto TOPO -->
+    <ImageView
+        android:id="@+id/topObject"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:visibility="gone"
+        android:contentDescription="@string/desc_incoming_object"
+        app:layout_constraintStart_toStartOf="@id/topPulse"
+        app:layout_constraintEnd_toEndOf="@id/topPulse"
+        app:layout_constraintTop_toTopOf="@id/topPulse"
+        android:layout_marginTop="24dp"/>
+
+    <!-- Objeto BAIXO -->
+    <ImageView
+        android:id="@+id/bottomObject"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="@id/bottomPulse"
+        app:layout_constraintEnd_toEndOf="@id/bottomPulse"
+        app:layout_constraintBottom_toBottomOf="@id/bottomPulse"
+        android:layout_marginBottom="24dp"/>
+
+    <!-- Seta à esquerda -->
+    <ImageView
+        android:id="@+id/leftArrow"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:visibility="gone"
+        android:src="@drawable/alert_cone"
+        app:layout_constraintEnd_toStartOf="@id/carImg"
+        app:layout_constraintTop_toTopOf="@id/carImg"
+        app:layout_constraintBottom_toBottomOf="@id/carImg"
+        android:layout_marginEnd="8dp"/>
+
+    <!-- Seta à direita -->
+    <ImageView
+        android:id="@+id/rightArrow"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:visibility="gone"
+        android:src="@drawable/alert_cone"
+        app:layout_constraintStart_toEndOf="@id/carImg"
+        app:layout_constraintTop_toTopOf="@id/carImg"
+        app:layout_constraintBottom_toBottomOf="@id/carImg"
+        android:layout_marginStart="8dp"/>
+
+    <!-- Seta em cima -->
+    <ImageView
+        android:id="@+id/topArrow"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:visibility="gone"
+        android:src="@drawable/alert_cone"
+        app:layout_constraintBottom_toTopOf="@id/carImg"
+        app:layout_constraintStart_toStartOf="@id/carImg"
+        app:layout_constraintEnd_toEndOf="@id/carImg"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Seta embaixo -->
+    <ImageView
+        android:id="@+id/bottomArrow"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:visibility="gone"
+        android:src="@drawable/alert_cone"
+        app:layout_constraintTop_toBottomOf="@id/carImg"
+        app:layout_constraintStart_toStartOf="@id/carImg"
+        app:layout_constraintEnd_toEndOf="@id/carImg"
+        android:layout_marginTop="8dp"/>
+
+    <!-- Pulso ESQUERDA -->
+    <View
+        android:id="@+id/leftPulse"
+        android:layout_width="450dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:background="@drawable/gradient"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+    <!-- Pulso DIREITA -->
+    <View
+        android:id="@+id/rightPulse"
+        android:layout_width="450dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:background="@drawable/gradient"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+    <!-- Pulso TOPO -->
+    <View
+        android:id="@+id/topPulse"
+        android:layout_width="0dp"
+        android:layout_height="1200dp"
+        android:visibility="gone"
+        android:background="@drawable/gradient"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"/>
+
+    <!-- Pulso BAIXO -->
+    <View
+        android:id="@+id/bottomPulse"
+        android:layout_width="0dp"
+        android:layout_height="450dp"
+        android:visibility="gone"
+        android:background="@drawable/gradient"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+    <ImageView
+        android:id="@+id/settingsIcon"
+        android:layout_width="52dp"
+        android:layout_height="62dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:srcCompat="@drawable/settings" />
+
+    <ImageView
+        android:id="@+id/imageView"
+        android:layout_width="53dp"
+        android:layout_height="38dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="4dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:srcCompat="@drawable/_020_logo_blau_rgb_institute_of_automated_driving" />
+
+    <ImageView
+        android:id="@+id/imageView3"
+        android:layout_width="124dp"
+        android:layout_height="29dp"
+        android:layout_marginStart="108dp"
+        android:layout_marginBottom="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:srcCompat="@drawable/logo_mover_vertical" />
+
+    <ImageView
+        android:id="@+id/imageView7"
+        android:layout_width="50dp"
+        android:layout_height="39dp"
+        android:layout_marginStart="205dp"
+        android:layout_marginBottom="4dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:srcCompat="@drawable/secondario_rgb" />
+
+    <ImageView
+        android:id="@+id/imageView5"
+        android:layout_width="47dp"
+        android:layout_height="40dp"
+        android:layout_marginEnd="204dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:srcCompat="@drawable/logo_ufscar_fundo_transparente" />
+
+    <ImageView
+        android:id="@+id/imageView4"
+        android:layout_width="74dp"
+        android:layout_height="43dp"
+        android:layout_marginEnd="4dp"
+        android:layout_marginBottom="-3dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:srcCompat="@drawable/logo_stellantis_neg_rgb" />
+
+    <ImageView
+        android:id="@+id/imageView6"
+        android:layout_width="61dp"
+        android:layout_height="39dp"
+        android:layout_marginEnd="136dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:srcCompat="@drawable/usp_logo_eps" />
+
+    <ImageView
+        android:id="@+id/imageView2"
+        android:layout_width="70dp"
+        android:layout_height="27dp"
+        android:layout_marginStart="68dp"
+        android:layout_marginBottom="12dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:srcCompat="@drawable/iara_color" />
+
+    <ImageView
+        android:id="@+id/imageView8"
+        android:layout_width="70dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="75dp"
+        android:layout_marginBottom="-3dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:srcCompat="@drawable/facens_logo_quadrado_removebg_preview" />
+
+    <include layout="@layout/notification_child_zone" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
