@@ -1,0 +1,26 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Instalar dependências essenciais de rede e git
+RUN apt-get update && apt-get install -y \
+    git \
+    iproute2 \
+    iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar pycrate e J2735 schema
+RUN pip install --no-cache-dir pycrate
+RUN git clone --depth 1 https://github.com/usdot-fhwa-stol/j2735decoder.git /tmp/j2735decoder && \
+    pip install /tmp/j2735decoder/wheels/j2735_202409-0.1.0-py3-none-any.whl && \
+    rm -rf /tmp/j2735decoder
+
+# Copiar scripts
+COPY j2735_codec.py rsu_5g_forwarder.py entrypoint-rsu.sh /app/
+
+# Tornar entrypoint executável
+RUN chmod +x /app/entrypoint-rsu.sh
+
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["/app/entrypoint-rsu.sh"]

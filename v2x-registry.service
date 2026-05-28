@@ -1,0 +1,14 @@
+[Unit]
+Description=V2X Central Registry (Simple DDNS)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/conecta2030/v2x_registry/v2x_registry.py
+WorkingDirectory=/home/conecta2030/v2x_registry
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=conecta2030
+
+[Install]
+WantedBy=multi-user.target

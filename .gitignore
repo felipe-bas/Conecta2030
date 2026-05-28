@@ -1,0 +1,9 @@
+commsignia-sdk/
+__pycache__/
+fac_alert
+obu_alert_server
+*.o
+*.so
+build/
+carla/
+*.txt
