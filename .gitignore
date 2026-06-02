@@ -7,3 +7,6 @@ obu_alert_server
 build/
 carla/
 *.txt
+
+.env
+*.csv
