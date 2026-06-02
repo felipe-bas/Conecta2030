@@ -202,10 +202,51 @@ def get_ssh_client(ip, user, password):
     return client
 
 def transfer_file_robust(ssh_client, local_path, remote_path):
-    sftp = ssh_client.open_sftp()
-    sftp.put(local_path, remote_path)
-    sftp.chmod(remote_path, 0o755)
-    sftp.close()
+    import os, time
+    filename = os.path.basename(local_path)
+    # Ensure unix paths and add filename if remote_path is a directory
+    if not remote_path.endswith('/' + filename):
+        full_remote = remote_path + "/" + filename
+    else:
+        full_remote = remote_path
+    
+    try:
+        print(f"  ➡️  Stopping and Transferring {filename}...")
+        ssh_client.exec_command(f"killall -9 {filename} >/dev/null 2>&1")
+        ssh_client.exec_command(f"rm -f {full_remote} >/dev/null 2>&1")
+        time.sleep(0.5)
+        
+        cmd = f"cat > {full_remote}"
+        stdin, stdout, stderr = ssh_client.exec_command(cmd)
+        
+        with open(local_path, "rb") as f:
+            while True:
+                data = f.read(32768)
+                if not data: break
+                stdin.write(data)
+                
+        stdin.channel.shutdown_write()
+        exit_status = stdout.channel.recv_exit_status()
+        
+        if exit_status != 0:
+            err = stderr.read().decode()
+            print(f"  ❌ Pipe failed (Exit {exit_status}): {err}")
+            return False
+            
+        local_size = os.path.getsize(local_path)
+        stdin, stdout, stderr = ssh_client.exec_command(f"wc -c < {full_remote}")
+        remote_size = int(stdout.read().decode().strip())
+        
+        if local_size == remote_size:
+            print(f"  ✅ Transfer Verified ({remote_size} bytes)")
+            ssh_client.exec_command(f"chmod +x {full_remote}")
+            return True
+        else:
+            print(f"  ⚠️ Size mismatch! Local: {local_size}, Remote: {remote_size}")
+            return False
+    except Exception as e:
+        print(f"  ❌ Exception during pipe transfer: {e}")
+        return False
 
 # ==========================================
 # ==========================================
