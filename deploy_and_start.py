@@ -186,7 +186,19 @@ def recompile_binaries(rsu_only=False):
 def get_ssh_client(ip, user, password):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(ip, username=user, password=password, timeout=5)
+    try:
+        client.connect(
+            ip, 
+            username=user, 
+            password=password, 
+            timeout=10, 
+            look_for_keys=False, 
+            allow_agent=False,
+            disabled_algorithms={'pubkeys': ['rsa-sha2-512', 'rsa-sha2-256']},
+            banner_timeout=60
+        )
+    except Exception as e:
+        print(f"  ⚠️ SSH connection failed to {ip}: {e}")
     return client
 
 def transfer_file_robust(ssh_client, local_path, remote_path):
