@@ -38,12 +38,29 @@ def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv
         for row in reader:
             try:
                 # find timestamp
-                ts_key = 'timestamp_envio' if 'timestamp_envio' in row else list(row.keys())[0]
-                ts = float(row[ts_key]) * 1000.0
+                if 'timestamp_envio' in row:
+                    ts_key = 'timestamp_envio'
+                elif 'Timestamp_Send' in row:
+                    ts_key = 'Timestamp_Send'
+                else:
+                    ts_key = list(row.keys())[-1] # fallback to last column
+                
+                # Check if it needs converting from seconds to ms
+                ts_raw = float(row[ts_key])
+                if ts_raw < 1e11: # se for em segundos (e.g. 1780428282)
+                    ts = ts_raw * 1000.0
+                else: # se já for em ms (e.g. 1780428282332)
+                    ts = ts_raw
                 
                 # find msg_cnt
-                msg_cnt_key = 'msg_cnt' if 'msg_cnt' in row else 'Seq_ID'
-                msg_cnt = int(row[msg_cnt_key]) if msg_cnt_key in row else 0
+                if 'msg_cnt' in row:
+                    msg_cnt_key = 'msg_cnt'
+                elif 'Seq_ID' in row:
+                    msg_cnt_key = 'Seq_ID'
+                else:
+                    msg_cnt_key = list(row.keys())[0] # fallback to first column
+                    
+                msg_cnt = int(row[msg_cnt_key])
                 
                 # find size_bytes
                 size = int(row['size_bytes']) if 'size_bytes' in row else 0
@@ -119,6 +136,16 @@ def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv
     total_enviados = len(envios)
     total_recebidos = len(recebidos_finais)
     pdr = (total_recebidos / total_enviados * 100) if total_enviados > 0 else 0
+    
+    # Corrige problemas de relógios dessincronizados (ex: OBU com horas de diferença do PC)
+    if latencias and (min(latencias) < 0 or sum(latencias)/len(latencias) > 60000):
+        # Assume que o pacote mais rápido levou 5ms
+        min_lat = min(latencias)
+        offset = 5.0 - min_lat
+        print(f"[AVISO] Relógios dessincronizados detectados. Aplicando offset de {offset/1000:.2f}s para ajustar a latência relativa.")
+        latencias = [l + offset for l in latencias]
+        for r in recebidos_finais:
+            r['latencia_ms'] += offset
     
     latencia_media = sum(latencias) / len(latencias) if latencias else 0
     if latencias:
