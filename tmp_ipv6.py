@@ -1,75 +1,66 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+﻿#!/usr/bin/env python3
 """
-V2X Deploy System - Unificado (IPv4 / IPv6)
-Compila código C para arquitetura ARM32 e envia para a OBU e RSU da Commsignia.
-Suporta integração local (CARLA) e remota (DDNS para IPv6).
+V2X Deploy System - v6.0 (Interactive CARLA Sim)
+Conecta 2030
+
+Features:
+1. Sequential Logic: Connects to RSU -> Sends File -> Disconnects -> Connects to OBU...
+2. Silent Transfer: Uses SSH Pipeline (cat > file) for invisible transfer locally.
+3. Final Execution: Spawns RSU/OBU windows.
+4. CARLA Sim (Interactive): Spawns a control window where you can manually send alerts.
 """
 
-import sys
 import os
+import sys
 import time
-import subprocess
+import json
 import socket
+import random
 import argparse
+import subprocess
 import threading
 import platform
 import paramiko
-import requests
-from dotenv import load_dotenv
 
-# Carregar variáveis do .env
-load_dotenv()
-
-# ==========================================
-# CONSTANTES VINDAS DO .ENV
-# ==========================================
-RSU_IPV4 = os.getenv("RSU_IPV4", "192.168.0.50")
-RSU_USER = os.getenv("RSU_USER", "root")
-RSU_PASS = os.getenv("RSU_PASS", "Conect@2024")
-
-OBU_IPV4 = os.getenv("OBU_IPV4", "192.168.0.53")
-OBU_USER = os.getenv("OBU_USER", "root")
-OBU_PASS = os.getenv("OBU_PASS", "Conect@24")
-
-CARLA_FIXED_IPV4 = os.getenv("CARLA_FIXED_IP", "192.168.0.56")
-CARLA_FIXED_IPV6 = os.getenv("CARLA_FIXED_IPV6", "2804:214:8780:3d5::633")
-
-DDNS_URL = os.getenv("DDNS_URL", "http://[2804:214:8780:3d5::633]:5000")
-DDNS_RSU_NAME = os.getenv("DDNS_RSU_NAME", "rsu-v2x")
-
+# Configuration
+RSU_IP = ""  # IP virá estritamente do DDNS
+RSU_USER = "root"
+RSU_PASS = "Conect@2024"
 RSU_PORT = 8080
+
+OBU_IP = "192.168.0.53"
+OBU_USER = "root"
+OBU_PASS = "Conect@24"
 OBU_PORT = 8080
+
+CARLA_IP = "2804:214:8780:3d5::633"  # IPv6 do PC rodando CARLA e DDNS
+
+# DDNS Configuration (servidor roda na máquina CARLA)
+DDNS_URL = f"http://[{CARLA_IP}]:5000"
+DDNS_RSU_NAME = "rsu-v2x"
 
 LOCAL_DIR = os.getcwd()
 
-# Colors for terminal output
+# ANSI Colors
+CYAN = "\033[96m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
-CYAN = "\033[96m"
 RESET = "\033[0m"
 
 # ==========================================
 # UTILS
 # ==========================================
 
-def get_local_ip(target_ip=None):
-    """
-    Descobre o IP local. Se um IP de destino for fornecido (ex: RSU_IPV4),
-    usa ele para descobrir qual placa de rede tem a rota direta.
-    Caso contrário, usa o Google (8.8.8.8) como fallback genérico.
-    """
-    target = target_ip if target_ip else "8.8.8.8"
+def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect((target, 80))
+        s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception:
-        # Fallback se a rede estiver fora ou não tiver rota
-        return CARLA_FIXED_IPV4
+    except:
+        return "192.168.0.100"
 
 def set_terminal_title(title):
     if platform.system().lower() == "windows":
@@ -82,12 +73,15 @@ def log(msg, color=RESET):
     try:
         print(f"{color}{msg}{RESET}")
     except UnicodeEncodeError:
+        # Fallback for Windows consoles that don't support emojis
         safe_msg = msg.encode('ascii', 'replace').decode('ascii')
         print(f"{color}{safe_msg}{RESET}")
 
 def check_ping(ip):
-    """Checks if the device is reachable via Ping."""
+    """Checks if the device is reachable via Ping. Handles IPv6."""
     param = '-n' if platform.system().lower() == 'windows' else '-c'
+    
+    # Use ping6 on Linux if it's an IPv6 address
     cmd_name = 'ping'
     if platform.system().lower() != 'windows' and ':' in ip:
         cmd_name = 'ping6'
@@ -98,10 +92,6 @@ def check_ping(ip):
         return result.returncode == 0
     except Exception:
         return False
-
-# ==========================================
-# DDNS (IPv6 Specific)
-# ==========================================
 
 def register_rsu_in_ddns(ssh_client):
     """Gets RSU IPv6 from wwan0 and registers it in the DDNS server."""
@@ -136,67 +126,83 @@ def register_rsu_in_ddns(ssh_client):
                 log(f"  ✅ RSU registered in DDNS: {DDNS_RSU_NAME} → {rsu_ipv6}", GREEN)
                 return True
             else:
-                log(f"  ❌ DDNS registration failed. Result: {result}", RED)
+                log(f"  ⚠️ DDNS registration response: {result}", YELLOW)
                 return False
         except Exception as e:
-            log(f"  ❌ Could not connect to DDNS ({DDNS_URL}): {e}", RED)
+            log(f"  ⚠️ DDNS registration failed (Is v2x_ddns_server.py running on {CARLA_IP}?): {e}", YELLOW)
             return False
-            
     except Exception as e:
-        log(f"  ❌ Exception during DDNS registration: {e}", RED)
+        log(f"  ⚠️ DDNS registration failed: {e}", YELLOW)
         return False
 
-def get_rsu_ip_from_ddns():
-    """Queries the DDNS server to get the dynamic IPv6 address of the RSU."""
-    import urllib.request
-    try:
-        url = f"{DDNS_URL}/resolve?name={DDNS_RSU_NAME}"
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                ip = response.read().decode('utf-8').strip()
-                if ip:
-                    return ip
-    except Exception as e:
-        log(f"  ⚠️ Could not resolve RSU IP from DDNS ({DDNS_URL}): {e}", YELLOW)
-    return None
 
-# ==========================================
-# COMPILAÇÃO E SSH
-# ==========================================
 
-def recompile_binaries(rsu_only=False):
-    log("\n[1/4] Compiling source code for ARM32...", YELLOW)
 
+def recompile_binaries():
+    """
+    Uses the local 'arm32-builder' Docker image to cross-compile the
+    source files in sdk_examples/conecta/ into the current directory.
+    """
+    log("\n[0/3] Recompiling Binaries (Docker)...", YELLOW)
+    
+    cwd = os.getcwd()
+    
+    # Path to SDK within the mounted workspace
+    # Note: We use relative path from the mount point (/workspace)
+    # The SDK path found was: commsignia-sdk\Unplugged-RT-y20.41.3...\Unplugged-RT-y20.41.3...\include
+    
+    # Let's verify the exact folder name from previous list_dir
+    # Root: commsignia-sdk
+    # Sub: Unplugged-RT-y20.41.3-b214979-linuxm_obx_sdk-remote_c_sdk
+    # Sub: Unplugged-RT-y20.41.3-b214979-linuxm_obx_sdk-remote_c_sdk
+    
     sdk_base = "commsignia-sdk/Unplugged-RT-y20.41.3-b214979-linuxm_obx_sdk-remote_c_sdk/Unplugged-RT-y20.41.3-b214979-linuxm_obx_sdk-remote_c_sdk"
     inc_path = f"{sdk_base}/include"
     lib_path = f"{sdk_base}/lib"
+    
+    # Common flags
+    # We add inc_path/asn1 because some headers are included as <asn1defs.h> directly
     flags = f"-static -s -I {inc_path} -I {inc_path}/asn1 -L {lib_path} -lits-asnsdk -lits-rem -lpthread -lrt -lstdc++ -lm"
+    
+    # Docker base command
+    docker_base = "sudo docker" if platform.system().lower() == "linux" else "docker"
 
-    # 1. Compile RSU application (fac_alert) - always
-    log("Compiling RSU App (fac_alert.c)...", CYAN)
-    rsu_compile_cmd = (
-        f'docker run --rm -v "{LOCAL_DIR}:/src" -w /src arm32-builder bash -c '
-        f'"arm-linux-gnueabihf-gcc fac_alert.c -o fac_alert {flags}"'
+    # 1. Compile RSU Server (fac_alert)
+    log("  🔨 Compiling RSU Server (fac_alert)...", CYAN)
+    cmd_rsu = (
+        f'{docker_base} run --rm -v "{cwd}:/workspace" arm32-builder '
+        f'arm-linux-gnueabihf-gcc sdk_examples/conecta/fac_alert.c '
+        f'-o fac_alert {flags}'
     )
-    res_rsu = os.system(rsu_compile_cmd)
-    if res_rsu != 0:
-        log("Compilation failed for RSU (fac_alert)!", RED)
-        sys.exit(1)
+    res_rsu = subprocess.run(cmd_rsu, shell=True)
+    
+    if res_rsu.returncode != 0:
+        log("  ❌ Compilation Failed for RSU Server!", RED)
+        return False
+    else:
+        # Verify freshness
+        ts = time.strftime('%H:%M:%S', time.localtime(os.path.getmtime("fac_alert")))
+        size = os.path.getsize("fac_alert")
+        log(f"  ✅ RSU Server Compiled. (Time: {ts}, Size: {size} bytes)", GREEN)
 
-    # 2. Compile OBU application (obu_alert_server) - skip if rsu_only
-    if not rsu_only:
-        log("Compiling OBU App (obu_alert_server.c)...", CYAN)
-        obu_compile_cmd = (
-            f'docker run --rm -v "{LOCAL_DIR}:/src" -w /src arm32-builder bash -c '
-            f'"arm-linux-gnueabihf-gcc obu_alert_server.c -o obu_alert_server {flags}"'
-        )
-        res_obu = os.system(obu_compile_cmd)
-        if res_obu != 0:
-            log("Compilation failed for OBU (obu_alert_server)!", RED)
-            sys.exit(1)
-
-    log("Compilation successful!", GREEN)
+    # 2. Compile OBU Server (obu_alert_server)
+    log("  🔨 Compiling OBU Server (obu_alert_server)...", CYAN)
+    cmd_obu = (
+        f'{docker_base} run --rm -v "{cwd}:/workspace" arm32-builder '
+        f'arm-linux-gnueabihf-gcc sdk_examples/conecta/obu_alert_server.c '
+        f'-o obu_alert_server {flags}'
+    )
+    res_obu = subprocess.run(cmd_obu, shell=True)
+    
+    if res_obu.returncode != 0:
+        log("  ❌ Compilation Failed for OBU Server!", RED)
+        return False
+    else:
+        ts = time.strftime('%H:%M:%S', time.localtime(os.path.getmtime("obu_alert_server")))
+        size = os.path.getsize("obu_alert_server")
+        log(f"  ✅ OBU Server Compiled. (Time: {ts}, Size: {size} bytes)", GREEN)
+        
+    return True
 
 def get_ssh_client(ip, user, password, retries=3):
     """Creates and returns a connected Paramiko SSH client with retries."""
@@ -220,12 +226,15 @@ def get_ssh_client(ip, user, password, retries=3):
         except Exception as e:
             if attempt < retries:
                 log(f"  ⚠️ SSH connection failed (Attempt {attempt}/{retries}): {e}. Retrying...", YELLOW)
-                import time
                 time.sleep(2)
             else:
                 log(f"  ❌ SSH connection ultimately failed: {e}", RED)
                 
     return None
+
+# ==========================================
+# TRANSFER LOGIC
+# ==========================================
 
 def transfer_file_robust(client, local_path, remote_path):
     """
@@ -235,15 +244,9 @@ def transfer_file_robust(client, local_path, remote_path):
     """
     import gzip
     import base64
-    import time
     
     filename = os.path.basename(local_path)
-    # Ensure unix paths and add filename if remote_path is a directory
-    if not remote_path.endswith('/' + filename):
-        full_remote = remote_path + "/" + filename
-    else:
-        full_remote = remote_path
-        
+    full_remote = os.path.join(remote_path, filename).replace("\\", "/")
     gz_remote = full_remote + ".gz"
     
     # 0. Kill existing instances
@@ -304,120 +307,13 @@ def transfer_file_robust(client, local_path, remote_path):
             client.exec_command(f"chmod +x {full_remote}")
             return True
         else:
-            log(f"  ⚠️ Size mismatch! Local: {local_size}, Remote: {remote_size}", YELLOW)
+            log(f"  ❌ Size mismatch! Local: {local_size}, Remote: {remote_size}", RED)
             return False
+            
     except Exception as e:
-        log(f"  ❌ Exception during transfer: {e}", RED)
+        log(f"  ❌ Transfer Exception: {e}", RED)
         return False
 
-# ==========================================
-# ==========================================
-# MAIN DEPLOY FLOW
-# ==========================================
-
-def main_deploy(mode_ipv6=False, enable_carla=False, test_data=False, rsu_only=False):
-    log(f"V2X Deploy System (IPv6={mode_ipv6}, CARLA={enable_carla}, TEST_DATA={test_data})", CYAN)
-
-    recompile_binaries(rsu_only=rsu_only)
-
-    rsu_ip = None
-
-    if mode_ipv6:
-        # IPv6 MODO
-        log("\n[2/4] Resolving RSU IP via DDNS (IPv6)...", YELLOW)
-        rsu_ip = get_rsu_ip_from_ddns()
-        if not rsu_ip:
-            log("RSU IP not found via DDNS. Ensure the RSU has registered itself.", RED)
-            sys.exit(1)
-        log(f"Resolved RSU IP: {rsu_ip}", GREEN)
-    else:
-        # IPv4 MODO
-        rsu_ip = RSU_IPV4
-        log(f"\n[2/4] Ping RSU ({rsu_ip}) e OBU ({OBU_IPV4})...", YELLOW)
-        if not check_ping(rsu_ip):
-            log(f"RSU {rsu_ip} is unreachable! Check cables/network.", RED)
-            sys.exit(1)
-        if not rsu_only and not check_ping(OBU_IPV4):
-            log(f"OBU {OBU_IPV4} is unreachable! Continuing anyway (might be on 5G only).", YELLOW)
-
-    # 1. TRANSFER RSU FILE
-    log(f"\n[3/4] Transferring files to RSU [{rsu_ip}] via SCP...", YELLOW)
-    try:
-        rsu_client = get_ssh_client(rsu_ip, RSU_USER, RSU_PASS)
-        log("Sending fac_alert to RSU...", CYAN)
-        transfer_file_robust(rsu_client, "fac_alert", "/tmp/fac_alert")
-
-        # Em IPv6, pode ser necessário registrar no DDNS ou isso já foi feito externamente?
-        if mode_ipv6:
-            register_rsu_in_ddns(rsu_client)
-            
-        rsu_client.close()
-        log("Upload to RSU complete.", GREEN)
-    except Exception as e:
-        log(f"Failed to connect or upload to RSU: {e}", RED)
-        sys.exit(1)
-
-    # 2. TRANSFER OBU FILE
-    if not rsu_only:
-        obu_ip = OBU_IPV4 # Usualmente OBU_IPV4 é fixo por cabo
-        log(f"\n[4/4] Transferring files to OBU [{obu_ip}] via SCP...", YELLOW)
-        try:
-            obu_client = get_ssh_client(obu_ip, OBU_USER, OBU_PASS)
-            log("Killing old obu_alert_server processes...", CYAN)
-            obu_client.exec_command("killall -9 obu_alert_server")
-
-            log("Sending obu_alert_server to OBU...", CYAN)
-            transfer_file_robust(obu_client, "obu_alert_server", "/tmp/obu_alert_server")
-            
-            obu_client.close()
-            log("Upload to OBU complete.", GREEN)
-        except Exception as e:
-            log(f"Failed to connect or upload to OBU: {e}", RED)
-            sys.exit(1)
-
-    # Lógica do Simulador Local / Destino do CARLA
-    if enable_carla:
-        # Pega IP Dinâmico da máquina local em direção ao IP alvo.
-        # Se for IPv6, RSU tá na nuvem e o target é a nuvem. Se IPv4, target é a RSU local.
-        local_pc_ip = get_local_ip(target_ip=rsu_ip) 
-        log(f"\n[!] MODO CARLA LOCAL: IP descoberto = {local_pc_ip}", YELLOW)
-        
-        carla_target = local_pc_ip
-        
-        # Lança o simulador local na porta 8080 (usando subprocess para não travar esta tela)
-        log("\nLaunch Simulador CARLA...", YELLOW)
-        if test_data:
-            open_child_window("CARLA_TestData", mode="simulate_test_data")
-        else:
-            open_child_window("CARLA_Interactive", mode="simulate_interactive")
-            
-        log("  ⏳ Esperando 3s para o servidor CARLA iniciar...", YELLOW)
-        time.sleep(3)
-    else:
-        # Se não usamos o PC local para carla, usamos o IP Fixo do CARLA Real (.env)
-        # Modo IPv6 -> passamos CARLA_FIXED_IPV6
-        # Modo IPv4 -> passamos CARLA_FIXED_IPV4
-        carla_target = CARLA_FIXED_IPV6 if mode_ipv6 else CARLA_FIXED_IPV4
-        log(f"\n[!] MODO CARLA FIXO: RSU se conectará ao CARLA em {carla_target}", YELLOW)
-
-    # Executa OBU em Janela Secundária
-    if not rsu_only:
-        log("\nLaunching OBU Server...", YELLOW)
-        open_child_window("OBU_Console", ip=OBU_IPV4, user=OBU_USER, password=OBU_PASS, command="/tmp/obu_alert_server", mode="listen")
-
-    # Executa RSU em Janela Secundária apontando para o IP do CARLA correspondente
-    # Na OBU/RSU o primeiro IP é o fallback/principal. Vamos focar num IP primário pra não sujar.
-    log(f"\nLaunching RSU Client (target: {carla_target})...", YELLOW)
-    open_child_window("RSU_Console", ip=rsu_ip, user=RSU_USER, password=RSU_PASS, command=f"/tmp/fac_alert {carla_target}", mode="listen")
-
-    log("\nDeploy Concluido! Pressione Enter para fechar as janelas do terminal (se foram atachadas a este processo).", GREEN)
-    try:
-        input()
-    except KeyboardInterrupt:
-        pass
-
-
-import json
 # ==========================================
 # SIMULATION LOGIC (CARLA INTERACTIVE)
 # ==========================================
@@ -736,7 +632,7 @@ MESSAGE_GENERATORS = {
 }
 
 # --------------------------
-# Multi-Client TCP Server (Simulation)
+# SocketSender (same pattern as manual_control_steeringwheel.py)
 # --------------------------
 
 class SocketSender:
@@ -800,63 +696,21 @@ class SocketSender:
         log("[INFO] Server shut down.", CYAN)
 
 
-def run_interactive_simulation(test_data=False):
-    """Starts the Interactive CARLA Simulator as a TCP Server.
-    
-    Architecture: This PC acts as TCP SERVER on port 8080.
-    RSU (fac_alert) connects here as a CLIENT, receives JSON messages,
-    encodes them to UPER and broadcasts via DSRC radio to the OBU.
-    """
-    os.system("title CARLA_Simulator_Controller")
-    log("CARLA INTERACTIVE SIMULATOR (TCP Server Mode)", CYAN)
-    log(f"This PC IP (RSU must reach this): {get_local_ip()}", GREEN)
-    log(f"Listening on 0.0.0.0:{RSU_PORT} — RSU (fac_alert) will auto-connect...", CYAN)
-    log("Commands: list, send [TYPE], auto [TYPE] [INTERVAL], status, close, quit", YELLOW)
+def run_interactive_simulation():
+    """Starts the CARLA Simulator as a TCP Server with interactive message control.
+    Uses SocketSender (same pattern as manual_control_steeringwheel.py)."""
+    set_terminal_title("CARLA_Simulator_Controller")
+    log("============================================", CYAN)
+    log("  CARLA V2X INTERACTIVE SIMULATOR", CYAN)
+    log("============================================", CYAN)
+    log(f"Listening on 0.0.0.0:{RSU_PORT} for RSU/OBU clients...", CYAN)
+    log("Commands: send [TYPE], auto [TYPE] [INTERVAL], status, list, close, quit", YELLOW)
     log("Types: bsm, map, spat, rsa, tim, psm, all", YELLOW)
-    log("====================================" , CYAN)
-    log(">>> Waiting for RSU to connect. Once connected, type 'send' to trigger an OBU alert (sends BSM+PSM+TIM).", GREEN)
+    log("====================================", CYAN)
 
     sender = SocketSender("0.0.0.0", RSU_PORT)
     sender.start_server()
     msg_count = 0
-
-    if test_data:
-        log("\n[TESTE DE DADOS] Modo automatizado ativado! Enviando BSM+PSM+TIM a 10Hz...", YELLOW)
-        interval = 0.1
-        ALERT_TYPES = ["bsm", "psm", "tim"]
-        gen_list = [(t, MESSAGE_GENERATORS[t]) for t in ALERT_TYPES if t in MESSAGE_GENERATORS]
-        
-        # Cria arquivo de log
-        log_file = open("log_envio_interno.csv", "w")
-        log_file.write("Seq_ID,Timestamp_Send\n")
-        
-        try:
-            while True:
-                msg_count += 1
-                for name, gen_func in gen_list:
-                    msg = json.loads(gen_func(msg_count))
-                    sender.send_event(msg)
-                    # O CARLA manda 3 mensagens por ciclo (BSM, PSM, TIM).
-                    # A RSU geralmente gera alertas a partir dessa combinação.
-                    # Vamos registrar o Timestamp para bater com o Seq_ID do log da OBU.
-                
-                # Registra apenas o envio do pacote consolidado ou do BSM principal
-                timestamp = int(time.time() * 1000)
-                log_file.write(f"{msg_count},{timestamp}\n")
-                log_file.flush()
-                
-                if not sender.clients:
-                    print(f"  [>] Auto-Sent #{msg_count} (Sem clientes conectados)")
-                else:
-                    print(f"  [>] Auto-Sent #{msg_count} para {len(sender.clients)} client(s)")
-                
-                time.sleep(interval)
-        except KeyboardInterrupt:
-            print("\n[*] Auto-Mode Stopped.")
-        finally:
-            log_file.close()
-            sender.close()
-            return
 
     while True:
         try:
@@ -879,10 +733,7 @@ def run_interactive_simulation(test_data=False):
                 print("  rsa  - Road Side Alert (Hazards)")
                 print("  tim  - Traveler Information (Work Zones)")
                 print("  psm  - Personal Safety Message (Pedestrians)")
-                print("  all  - Send ALL types (bsm+map+spat+rsa+tim+psm)")
-                print("")
-                print("  NOTE: The OBU only forwards to the tablet when it receives")
-                print("        BSM + PSM + TIM together. 'send' without args sends all 3.")
+                print("  all  - Send all message types at once")
                 print("")
 
             elif cmd == "status":
@@ -907,26 +758,14 @@ def run_interactive_simulation(test_data=False):
                     print("[!] No clients connected. Wait for RSU/OBU to connect.")
                     continue
 
-                msg_type = parts[1] if len(parts) > 1 else "alert"
+                msg_type = parts[1] if len(parts) > 1 else "bsm"
                 msg_count += 1
-
-                # "alert" (default) = the 3 types the OBU needs to forward to the tablet
-                ALERT_TYPES = ["bsm", "psm", "tim"]
 
                 if msg_type == "all":
                     for gen_name, gen_func in MESSAGE_GENERATORS.items():
                         msg = json.loads(gen_func(msg_count))
                         sender.send_event(msg)
                     print(f"  [>] Sent ALL types (Msg #{msg_count}) to {len(sender.clients)} client(s)")
-                elif msg_type == "alert":
-                    sent = []
-                    for t in ALERT_TYPES:
-                        gen = MESSAGE_GENERATORS.get(t)
-                        if gen:
-                            msg = json.loads(gen(msg_count))
-                            sender.send_event(msg)
-                            sent.append(t)
-                    print(f"  [>] Sent alert bundle [{'+'.join(sent)}] (Msg #{msg_count}) -> OBU will now forward to tablet")
                 else:
                     gen = MESSAGE_GENERATORS.get(msg_type)
                     if not gen:
@@ -935,26 +774,20 @@ def run_interactive_simulation(test_data=False):
                     msg = json.loads(gen(msg_count))
                     sender.send_event(msg)
                     print(f"  [>] Sent '{msg_type}' (Msg #{msg_count}) to {len(sender.clients)} client(s)")
-                    if msg_type in ("bsm", "psm", "tim"):
-                        print(f"  [!] NOTE: OBU needs BSM+PSM+TIM to forward. Missing: { {t for t in ALERT_TYPES if t != msg_type} }")
 
             elif cmd == "auto":
                 if not sender.clients:
                     print("[!] No clients connected. Wait for RSU/OBU to connect.")
                     continue
 
-                msg_type = parts[1] if len(parts) > 1 else "alert"
-                interval = 1.0  # Default 1Hz
+                msg_type = parts[1] if len(parts) > 1 else "bsm"
+                interval = 0.1  # Default 10Hz
                 if len(parts) > 2:
                     try: interval = float(parts[2])
                     except: pass
 
-                ALERT_TYPES = ["bsm", "psm", "tim"]
-
                 if msg_type == "all":
                     gen_list = list(MESSAGE_GENERATORS.items())
-                elif msg_type == "alert":
-                    gen_list = [(t, MESSAGE_GENERATORS[t]) for t in ALERT_TYPES if t in MESSAGE_GENERATORS]
                 else:
                     gen = MESSAGE_GENERATORS.get(msg_type)
                     if not gen:
@@ -962,10 +795,7 @@ def run_interactive_simulation(test_data=False):
                         continue
                     gen_list = [(msg_type, gen)]
 
-                type_label = '+'.join([t for t, _ in gen_list])
-                print(f"[*] Auto-sending '{type_label}' every {interval}s (Ctrl+C to stop)...")
-                if msg_type == "alert":
-                    print(f"    (BSM+PSM+TIM bundle — OBU will forward to tablet on each cycle)")
+                print(f"[*] Auto-sending '{msg_type}' every {interval}s (Ctrl+C to stop)...")
                 try:
                     while True:
                         msg_count += 1
@@ -975,7 +805,8 @@ def run_interactive_simulation(test_data=False):
                         if not sender.clients:
                             print("[!] All clients disconnected, stopping auto-mode.")
                             break
-                        print(f"  [>] Auto-Sent #{msg_count} [{type_label}] to {len(sender.clients)} client(s)")
+                        if msg_count % max(1, int(1.0 / interval)) == 0:
+                            print(f"  [>] #{msg_count} | {len(sender.clients)} client(s)")
                         time.sleep(interval)
                 except KeyboardInterrupt:
                     print("\n[*] Auto-Mode Stopped.")
@@ -998,7 +829,7 @@ def run_interactive_simulation(test_data=False):
 
 def interactive_shell(ip, user, password, command, title):
     """Refined Interactive Shell for the child windows."""
-    os.system(f"title {title}")
+    set_terminal_title(title)
     log(f"🔌 Connecting to {title} ({ip})...", CYAN)
     
     client = get_ssh_client(ip, user, password)
@@ -1015,8 +846,6 @@ def interactive_shell(ip, user, password, command, title):
         time.sleep(1)
         chan.send(command + "\n")
         
-        import msvcrt
-        
         def write_to_stdout():
             while True:
                 if chan.recv_ready():
@@ -1031,13 +860,33 @@ def interactive_shell(ip, user, password, command, title):
         t = threading.Thread(target=write_to_stdout, daemon=True)
         t.start()
         
-        while True:
-            if msvcrt.kbhit():
-                char = msvcrt.getch()
-                chan.send(char)
-            if not t.is_alive() or not chan.active:
-                break
-            time.sleep(0.05)
+        if platform.system().lower() == "windows":
+            import msvcrt
+            while True:
+                if msvcrt.kbhit():
+                    char = msvcrt.getch()
+                    chan.send(char)
+                if not t.is_alive() or not chan.active:
+                    break
+                time.sleep(0.05)
+        else:
+            import select
+            import tty
+            import termios
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                while True:
+                    if select.select([sys.stdin], [], [], 0.0) == ([sys.stdin], [], []):
+                        char = sys.stdin.read(1)
+                        if char:
+                            chan.send(char.encode('utf-8'))
+                    if not t.is_alive() or not chan.active:
+                        break
+                    time.sleep(0.05)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
             
     except Exception as e:
         log(f"\n❌ Connection Error: {e}", RED)
@@ -1059,19 +908,32 @@ def open_child_window(title, ip=None, user=None, password=None, command=None, mo
     if mode == "listen":
         # Argument Quoting
         safe_pass = password.replace('"', '\\"')
-        # Escapamos caracteres especiais do Windows (^|, ^&, ^>) para que não sejam interpretados localmente
-        safe_cmd = command.replace('"', '\\"').replace('|', '^|').replace('&', '^&').replace('>', '^>')
+        safe_cmd = command.replace('"', '\\"')
         args = f'"{python_exe}" "{script_path}" --listen --ip {ip} --user {user} --pass "{safe_pass}" --cmd "{safe_cmd}" --title "{title}"'
         
     elif mode == "simulate":
         args = f'"{python_exe}" "{script_path}" --simulate'
-    elif mode == "simulate_interactive":
-        args = f'"{python_exe}" "{script_path}" --simulate'
-    elif mode == "simulate_test_data":
-        args = f'"{python_exe}" "{script_path}" --simulate_test_data'
         
-    full_cmd = f'start "{title}" cmd /k "{args}"'
-    
+    if platform.system().lower() == "windows":
+        full_cmd = f'start "{title}" cmd /k "{args}"'
+    else:
+        # Detect terminal
+        terminals = [
+            ("gnome-terminal", f"gnome-terminal --title='{title}' -- bash -c '{args}; exec bash'"),
+            ("konsole", f"konsole --title '{title}' -e bash -c '{args}; exec bash'"),
+            ("xfce4-terminal", f"xfce4-terminal --title='{title}' -e 'bash -c \"{args}; exec bash\"'"),
+            ("xterm", f"xterm -T '{title}' -e bash -c '{args}; exec bash'")
+        ]
+        
+        full_cmd = ""
+        for term, cmd in terminals:
+            if subprocess.run(["which", term], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                full_cmd = cmd
+                break
+        
+        if not full_cmd:
+            full_cmd = f"xterm -T '{title}' -e bash -c '{args}; exec bash'"
+            
     log(f"  🖥️  Launching {title}...", CYAN)
     subprocess.Popen(full_cmd, shell=True)
 
@@ -1079,59 +941,180 @@ def open_child_window(title, ip=None, user=None, password=None, command=None, mo
 # MAIN DEPLOY FLOW
 # ==========================================
 
+def get_rsu_ip_from_ddns():
+    """Queries the DDNS server to get the dynamic IPv6 address of the RSU."""
+    import urllib.request
+    try:
+        url = f"{DDNS_URL}/resolve?name={DDNS_RSU_NAME}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                ip = response.read().decode('utf-8').strip()
+                if ip:
+                    return ip
+    except Exception as e:
+        log(f"  ⚠️ Could not resolve RSU IP from DDNS ({DDNS_URL}): {e}", YELLOW)
+    return None
+
+def main_deploy(enable_carla=False, skip_rsu=False, skip_obu=False):
+    global RSU_IP
+    log("============================================", CYAN)
+    log("  V2X Deploy System v8.0 (Auto-Recompile)", CYAN)
+    log("============================================", CYAN)
+
+    # 0. Always Recompile
+    if not recompile_binaries():
+        log("\n🛑 Aborting due to compilation failure.", RED)
+        return
+
+    # 0.5. Resolve RSU IPv6 via DDNS for Everything
+    if not skip_rsu:
+        log("\n[0.5/3] Resolving RSU IP via DDNS...", YELLOW)
+        log("  📡 Getting RSU IP from DDNS...", CYAN)
+        resolved = get_rsu_ip_from_ddns()
+        if resolved:
+            RSU_IP = resolved
+            log(f"  ✅ RSU IPv6 dynamically resolved to: {RSU_IP}", GREEN)
+        else:
+            log(f"  ⚠️ Could not resolve IPv6 from DDNS. Deploy may fail.", YELLOW)
+
+    # 1. Connectivity
+    log("\n[1/3] Connectivity Check (IPv6 Strict)...", YELLOW)
+    rsu_ok = False
+    obu_ok = False
+    
+    if not skip_rsu:
+        rsu_ok = check_ping(RSU_IP)
+            
+        if rsu_ok: 
+            log(f"  ✓ RSU ({RSU_IP}) Online", GREEN)
+        else: 
+            log(f"  ❌ RSU ({RSU_IP}) Offline (Ping falhou) - Atualize o DDNS ou verifique a antena!", RED)
+    else:
+        log("  ⏭️ RSU Deployment Skipped", YELLOW)
+
+    if not skip_obu:
+        obu_ok = check_ping(OBU_IP)
+        if obu_ok: log(f"  ✓ OBU ({OBU_IP}) Online", GREEN)
+        else: log(f"  ❌ OBU ({OBU_IP}) Offline", RED)
+    else:
+        log("  ⏭️ OBU Deployment Skipped", YELLOW)
+
+    fac_path = os.path.join(LOCAL_DIR, "fac_alert")
+    obu_path = os.path.join(LOCAL_DIR, "obu_alert_server")
+    
+    rsu_ready = False
+    obu_ready = False
+
+    # 2. Sequential Transfer
+    log("\n[2/3] Transferring files (Pipe Mode)...", YELLOW)
+    
+    # RSU
+    if rsu_ok:
+        log(f"\n  🔌 Connecting to RSU via IPv6 ({RSU_IP})...", CYAN)
+        for attempt in range(1, 4):
+            try:
+                client = get_ssh_client(RSU_IP, RSU_USER, RSU_PASS)
+                if client:
+                    rsu_ready = transfer_file_robust(client, fac_path, "/tmp/")
+                    client.close()
+                    if rsu_ready: break
+            except Exception as e:
+                log(f"    ⚠️ RSU Attempt {attempt} failed: {e}", YELLOW)
+            time.sleep(2)
+        if rsu_ready:
+             log("  🔌 RSU Disconnected.", CYAN)
+        else:
+             log("  ❌ RSU Transfer Failed after retries.", RED)
+    
+    time.sleep(2)
+    
+    # OBU
+    if obu_ok:
+        log(f"\n  🔌 Connecting to OBU ({OBU_IP})...", CYAN)
+        for attempt in range(1, 4):
+            try:
+                client = get_ssh_client(OBU_IP, OBU_USER, OBU_PASS)
+                if client:
+                    obu_ready = transfer_file_robust(client, obu_path, "/tmp/")
+                    client.close()
+                    if obu_ready: break
+            except Exception as e:
+                log(f"    ⚠️ OBU Attempt {attempt} failed: {e}", YELLOW)
+            time.sleep(2)
+        if obu_ready:
+             log("  🔌 OBU Disconnected.", CYAN)
+        else:
+             log("  ❌ OBU Transfer Failed after retries.", RED)
+
+    # 3. Execution
+    log("\n[3/3] Launching Execution Windows...", YELLOW)
+    
+    # Wait to allow remote SSH daemon to close sockets properly
+    # Dropbear (RSU SSH server) drops connections if too many are made quickly.
+    log("  ⏳ Waiting 5s for remote SSH sockets to close...", YELLOW)
+    time.sleep(5.0)
+    
+    if rsu_ready:
+        open_child_window("RSU_Console", ip=RSU_IP, user=RSU_USER, password=RSU_PASS, command=f"/tmp/fac_alert {CARLA_IP}", mode="listen")
+    elif rsu_ok:
+        log("  ⚠️ RSU Transfer failed, skipping launch.", RED)
+        
+    if obu_ready:
+        time.sleep(1)
+        open_child_window("OBU_Console", ip=OBU_IP, user=OBU_USER, password=OBU_PASS, command="/tmp/obu_alert_server", mode="listen")
+    elif obu_ok:
+         log("  ⚠️ OBU Transfer failed, skipping launch.", RED)
+         
+    # 4. CARLA Simulation
+    if enable_carla:
+        log("\n[4/4] Launching Interactive CARLA Simulator...", YELLOW)
+        time.sleep(1)
+        open_child_window("CARLA_Controller", mode="simulate")
+         
+    log("\n✅ Done.", GREEN)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="V2X Deploy System - Unificado")
+    parser = argparse.ArgumentParser()
+    # Modes
+    parser.add_argument("--listen", action="store_true", help="Internal: Remote Shell Mode")
+    parser.add_argument("--simulate", action="store_true", help="Internal: CARLA Simulation Mode")
     
-    # Internal Modes for child windows
-    parser.add_argument("--listen", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--simulate", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--simulate_test_data", action="store_true", help=argparse.SUPPRESS)
+    # User Options
+    parser.add_argument("--carla", action="store_true", help="Launch CARLA Simulation window after deploy")
+    parser.add_argument("--skip-rsu", action="store_true", help="Skip deploying RSU Server")
+    parser.add_argument("--skip-obu", action="store_true", help="Skip deploying OBU Server")
+    # parser.add_argument("--recompile", action="store_true", help="Recompile binaries via Docker before deploying")
     
-    # Listen arguments
-    parser.add_argument("--ip", help=argparse.SUPPRESS)
-    parser.add_argument("--user", help=argparse.SUPPRESS)
-    parser.add_argument("--pass", dest="password", help=argparse.SUPPRESS)
-    parser.add_argument("--cmd", help=argparse.SUPPRESS)
-    parser.add_argument("--title", help=argparse.SUPPRESS)
+    # Listen Args
+    parser.add_argument("--ip")
+    parser.add_argument("--user")
+    parser.add_argument("--pass", dest="password")
+    parser.add_argument("--cmd")
+    parser.add_argument("--title")
     
-    # Mutually exclusive group for mode
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--ipv4", action="store_true", help="Usa a rede local IPv4 (Padrão)")
-    group.add_argument("--ipv6", action="store_true", help="Usa rede IPv6/DDNS")
+    args = parser.parse_args()
     
-    parser.add_argument("--carla", action="store_true", help="Usa o simulador CARLA rodando na máquina local (abre janela e descobre o IP)")
-    parser.add_argument("--teste_dados", action="store_true", help="Deve ser usado junto com --carla. Inicia o simulador interno em modo de disparo automatico e gera log_envio_interno.csv.")
-    parser.add_argument("--rsu-only", action="store_true", help="Apenas compila e envia para a RSU (Ignora a OBU)")
-
-    args, _ = parser.parse_known_args()
-
     if args.listen:
         try:
+            print(f"DEBUG: Starting Listener for {args.ip}")
             interactive_shell(args.ip, args.user, args.password, args.cmd, args.title)
         except Exception as e:
-            print(f"Error in listen mode: {e}")
-        sys.exit(0)
-        
-    if args.simulate:
-        run_interactive_simulation(test_data=False)
-        sys.exit(0)
-        
-    if args.simulate_test_data:
-        run_interactive_simulation(test_data=True)
-        sys.exit(0)
-
-    # Se não especificou nenhum, assume ipv4
-    mode_ipv6 = args.ipv6
-    
-    # Se passou teste_dados mas não passou carla, alerta
-    if args.teste_dados and not args.carla:
-        print("AVISO: --teste_dados não faz nada sem a flag --carla. Ativando --carla automaticamente.")
-        args.carla = True
-
-    main_deploy(
-        mode_ipv6=mode_ipv6,
-        enable_carla=args.carla,
-        test_data=args.teste_dados,
-        rsu_only=args.rsu_only
-    )
+            print(f"CRITICAL ERROR: {e}")
+            input("Press Enter to exit...")
+            
+    elif args.simulate:
+        try:
+            run_interactive_simulation()
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            print(f"SIMULATION ERROR: {e}")
+            input("Press Enter to exit...")
+            
+    else:
+        try:
+            # Recompile is now mandatory
+            main_deploy(enable_carla=args.carla, skip_rsu=args.skip_rsu, skip_obu=args.skip_obu)
+        except KeyboardInterrupt:
+            pass

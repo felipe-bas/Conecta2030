@@ -220,20 +220,6 @@ static bool process_uper(const ASN1CType* unused_type, cms_buffer_view_t msg, lo
                     msg_cnt_str += strlen("\"msgCnt\":");
                     sscanf(msg_cnt_str, "%d", &msg_cnt);
                 }
-                
-                // Log to CSV
-                FILE *log_file = fopen("log_recepcao.csv", "a");
-                if (log_file) {
-                    // Get file size to write header if empty
-                    fseek(log_file, 0, SEEK_END);
-                    long size = ftell(log_file);
-                    if (size == 0) {
-                        fprintf(log_file, "Seq_ID,Timestamp_Recv,SNR,RSSI\n");
-                    }
-                    // We log SNR as 0 currently (placeholder)
-                    fprintf(log_file, "%d,%lld,%d,%d\n", msg_cnt, rx_ts, 0, rssi);
-                    fclose(log_file);
-                }
             }
         } else {
             fprintf(stderr, "Failed to parse clean JSON from jer_ptr\n");
@@ -254,6 +240,12 @@ static bool process_uper(const ASN1CType* unused_type, cms_buffer_view_t msg, lo
 
             FILE *fp = fopen("/tmp/log_recepcao.csv", "a");
             if (fp) {
+                // Get file size to write header if empty
+                fseek(fp, 0, SEEK_END);
+                long size = ftell(fp);
+                if (size == 0) {
+                    fprintf(fp, "rx_timestamp,msg_type,msg_cnt,size_bytes,rssi_dbm\n");
+                }
                 // Format: rx_timestamp_ms, msg_type, msg_cnt, size_bytes, rssi_dbm
                 fprintf(fp, "%lld,%s,%d,%d,%d\n", rx_ts, detected_key, msg_cnt, msg_len, rssi);
                 fclose(fp);
