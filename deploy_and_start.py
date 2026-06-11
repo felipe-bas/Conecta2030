@@ -1103,6 +1103,7 @@ if __name__ == "__main__":
     parser.add_argument("--carla", action="store_true", help="Usa o simulador CARLA rodando na máquina local (abre janela e descobre o IP)")
     parser.add_argument("--teste_dados", action="store_true", help="Deve ser usado junto com --carla. Inicia o simulador interno em modo de disparo automatico e gera log_envio_interno.csv.")
     parser.add_argument("--rsu-only", action="store_true", help="Apenas compila e envia para a RSU (Ignora a OBU)")
+    parser.add_argument("--sync", action="store_true", help="Sincroniza os relógios da RSU, OBU e PC via GPS PPS antes de iniciar")
 
     args, _ = parser.parse_known_args()
 
@@ -1128,6 +1129,17 @@ if __name__ == "__main__":
     if args.teste_dados and not args.carla:
         print("AVISO: --teste_dados não faz nada sem a flag --carla. Ativando --carla automaticamente.")
         args.carla = True
+
+    # Sincronização GPS PPS (opcional, mas recomendado para métricas precisas)
+    if args.sync:
+        try:
+            from sync_gps_time import full_sync
+            log("\n[0/4] Sincronizando relógios via GPS PPS...", YELLOW)
+            full_sync()
+        except ImportError:
+            log("[AVISO] sync_gps_time.py não encontrado. Pulando sincronização.", YELLOW)
+        except Exception as e:
+            log(f"[AVISO] Falha na sincronização GPS: {e}. Continuando mesmo assim.", YELLOW)
 
     main_deploy(
         mode_ipv6=mode_ipv6,
