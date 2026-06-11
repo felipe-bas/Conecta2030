@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 GPS PPS Time Synchronization for V2X Conecta 2030
-Sincroniza os relógios da RSU, OBU e PC usando GPS como referência.
+Sincroniza os relgios da RSU, OBU e PC usando GPS como referncia.
 A RSU atua como servidor NTP Stratum 1 (disciplinado por GPS).
 O PC sincroniza com a RSU via w32tm.
 """
@@ -28,7 +28,7 @@ def log(msg, color=""):
     print(f"{color}{msg}{RESET}")
 
 def get_ssh_client(ip, username, password):
-    """Cria conexão SSH robusta com os dispositivos Commsignia."""
+    """Cria conexo SSH robusta com os dispositivos Commsignia."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
@@ -56,7 +56,7 @@ def ssh_exec(client, cmd, timeout=10):
         return f"ERRO: {e}"
 
 def check_gps_status(client, device_name):
-    """Verifica se o GPS tem fix (lock nos satélites)."""
+    """Verifica se o GPS tem fix (lock nos satlites)."""
     log(f"\n{'='*50}", CYAN)
     log(f"  GPS Status: {device_name}", CYAN)
     log(f"{'='*50}", CYAN)
@@ -80,11 +80,11 @@ def check_gps_status(client, device_name):
             if any(kw in result.lower() for kw in ['fix', 'locked', 'valid', '3d', '2d', 'lat', 'lon']):
                 gps_ok = True
     
-    # Verifica se gpsd está rodando
+    # Verifica se gpsd est rodando
     ps_result = ssh_exec(client, "ps | grep -i gps | grep -v grep")
     if ps_result:
         log(f"  [Processos GPS]: {ps_result}", GREEN)
-        gps_ok = True  # Se gpsd está rodando, provavelmente está OK
+        gps_ok = True  # Se gpsd est rodando, provavelmente est OK
     else:
         log(f"  [Processos GPS]: Nenhum daemon GPS encontrado", YELLOW)
     
@@ -115,8 +115,8 @@ def setup_ntp_server(client, device_name):
         if "ERRO" in result:
             log(f"  [AVISO] Comando falhou: {cmd} -> {result}", YELLOW)
     
-    # Reinicia o serviço NTP
-    # Tenta diferentes métodos (varia por firmware)
+    # Reinicia o servio NTP
+    # Tenta diferentes mtodos (varia por firmware)
     restart_cmds = [
         "/etc/init.d/sysntpd restart",
         "/etc/init.d/ntpd restart 2>/dev/null",
@@ -126,7 +126,7 @@ def setup_ntp_server(client, device_name):
     for cmd in restart_cmds:
         result = ssh_exec(client, cmd)
     
-    log(f"  ✅ NTP Server habilitado em {device_name}", GREEN)
+    log(f"   NTP Server habilitado em {device_name}", GREEN)
 
 def setup_ntp_client(client, device_name):
     """Configura o dispositivo como cliente NTP (apenas sincroniza via GPS)."""
@@ -142,12 +142,12 @@ def setup_ntp_client(client, device_name):
     
     # Reinicia
     ssh_exec(client, "/etc/init.d/sysntpd restart")
-    log(f"  ✅ NTP habilitado em {device_name}", GREEN)
+    log(f"   NTP habilitado em {device_name}", GREEN)
 
 def fallback_ssh_sync(client, device_name):
     """
-    Fallback: Se o GPS não tiver fix, sincroniza via SSH 
-    usando a hora do PC como referência.
+    Fallback: Se o GPS no tiver fix, sincroniza via SSH 
+    usando a hora do PC como referncia.
     """
     log(f"\n  [FALLBACK] Sincronizando {device_name} com a hora do PC...", YELLOW)
     
@@ -158,20 +158,20 @@ def fallback_ssh_sync(client, device_name):
     result = ssh_exec(client, cmd)
     
     if "ERRO" not in result:
-        log(f"  ✅ {device_name} sincronizado via SSH: {now_utc} UTC", GREEN)
+        log(f"  [OK] {device_name} sincronizado via SSH: {now_utc} UTC", GREEN)
         return True
     else:
-        log(f"  ❌ Falha ao sincronizar {device_name}: {result}", RED)
+        log(f"  [ERRO] Falha ao sincronizar {device_name}: {result}", RED)
         return False
 
 def sync_pc_to_rsu(rsu_ip):
-    """Sincroniza o relógio do PC Windows com a RSU via NTP."""
+    """Sincroniza o relgio do PC Windows com a RSU via NTP."""
     log(f"\n{'='*50}", CYAN)
     log(f"  Sincronizando PC com RSU ({rsu_ip})", CYAN)
     log(f"{'='*50}", CYAN)
     
     if platform.system() != "Windows":
-        log("  [INFO] Sistema não é Windows, pulando w32tm.", YELLOW)
+        log("  [INFO] Sistema no  Windows, pulando w32tm.", YELLOW)
         return False
     
     try:
@@ -182,9 +182,9 @@ def sync_pc_to_rsu(rsu_ip):
         is_admin = result.returncode == 0
         
         if not is_admin:
-            log("  [AVISO] Sem privilégio de administrador.", YELLOW)
-            log("  Para sincronização precisa via NTP, execute como Administrador.", YELLOW)
-            log("  Alternativa: a sincronização SSH (fallback) será usada.", YELLOW)
+            log("  [AVISO] Sem privilgio de administrador.", YELLOW)
+            log("  Para sincronizao precisa via NTP, execute como Administrador.", YELLOW)
+            log("  Alternativa: a sincronizao SSH (fallback) ser usada.", YELLOW)
             return False
         
         # Configura w32tm para usar a RSU como fonte
@@ -209,20 +209,20 @@ def sync_pc_to_rsu(rsu_ip):
             lines = result.stdout.strip().split('\n')
             for line in lines[-3:]:
                 log(f"  [NTP Offset]: {line.strip()}", GREEN)
-            log(f"  ✅ PC sincronizado com RSU via NTP!", GREEN)
+            log(f"   PC sincronizado com RSU via NTP!", GREEN)
             return True
         else:
-            log(f"  [AVISO] w32tm não conseguiu medir offset: {result.stderr}", YELLOW)
+            log(f"  [AVISO] w32tm no conseguiu medir offset: {result.stderr}", YELLOW)
             return False
             
     except Exception as e:
-        log(f"  [ERRO] Falha na sincronização NTP do PC: {e}", RED)
+        log(f"  [ERRO] Falha na sincronizao NTP do PC: {e}", RED)
         return False
 
 def validate_sync(rsu_client, obu_client):
-    """Valida a sincronização comparando os relógios."""
+    """Valida a sincronizao comparando os relgios."""
     log(f"\n{'='*50}", CYAN)
-    log(f"  Validação da Sincronização", CYAN)
+    log(f"  Validao da Sincronizao", CYAN)
     log(f"{'='*50}", CYAN)
     
     pc_time = time.time()
@@ -241,7 +241,7 @@ def validate_sync(rsu_client, obu_client):
             log(f"  RSU (epoch): {rsu_time:.3f}  |  Offset: {offset_rsu*1000:.1f} ms", 
                 GREEN if offset_rsu < 0.1 else YELLOW)
         except ValueError:
-            log(f"  RSU: não suporta %N, usando date +%s", YELLOW)
+            log(f"  RSU: no suporta %N, usando date +%s", YELLOW)
             rsu_time_str = ssh_exec(rsu_client, "date +%s")
             try:
                 rsu_time = float(rsu_time_str)
@@ -273,19 +273,19 @@ def validate_sync(rsu_client, obu_client):
     # Resultado
     all_ok = True
     for dev, offset in offsets.items():
-        if offset > 1.0:  # Mais de 1 segundo de diferença
-            log(f"\n  ⚠️  {dev} tem offset de {offset:.1f}s — considere re-sincronizar!", YELLOW)
+        if offset > 1.0:  # Mais de 1 segundo de diferena
+            log(f"\n    {dev} tem offset de {offset:.1f}s  considere re-sincronizar!", YELLOW)
             all_ok = False
     
     if all_ok and offsets:
-        log(f"\n  ✅ Todos os dispositivos sincronizados! Offsets < 1s", GREEN)
+        log(f"\n   Todos os dispositivos sincronizados! Offsets < 1s", GREEN)
     
     return offsets
 
 def full_sync():
-    """Executa a sincronização completa: GPS check → NTP setup → PC sync → Validação."""
+    """Executa a sincronizao completa: GPS check  NTP setup  PC sync  Validao."""
     log("=" * 55, CYAN)
-    log("  🛰️  GPS PPS Time Synchronization — Conecta 2030", CYAN)
+    log("  [GPS] PPS Time Synchronization - Conecta 2030", CYAN)
     log("=" * 55, CYAN)
     
     rsu_ip = os.getenv("RSU_IPV4", "192.168.0.50")
@@ -301,47 +301,47 @@ def full_sync():
     rsu_gps_ok = False
     obu_gps_ok = False
     
-    # ── PASSO 1: Conectar e verificar GPS na RSU ──
+    #  PASSO 1: Conectar e verificar GPS na RSU 
     log("\n[1/4] Verificando GPS na RSU...", CYAN)
     rsu_client = get_ssh_client(rsu_ip, rsu_user, rsu_pass)
     if rsu_client:
         rsu_gps_ok, rsu_date = check_gps_status(rsu_client, "RSU")
         
         if rsu_gps_ok:
-            log("  ✅ GPS da RSU com fix! Usando como referência de tempo.", GREEN)
+            log("  [OK] GPS da RSU com fix! Usando como referncia de tempo.", GREEN)
             setup_ntp_server(rsu_client, "RSU")
         else:
-            log("  ⚠️  GPS da RSU sem fix. Usando fallback SSH.", YELLOW)
+            log("  [AVISO] GPS da RSU sem fix. Usando fallback SSH.", YELLOW)
             fallback_ssh_sync(rsu_client, "RSU")
             setup_ntp_server(rsu_client, "RSU")  # Ainda habilita NTP server
     else:
-        log("  ❌ Não foi possível conectar na RSU.", RED)
+        log("  [ERRO] No foi possvel conectar na RSU.", RED)
     
-    # ── PASSO 2: Conectar e verificar GPS na OBU ──
+    #  PASSO 2: Conectar e verificar GPS na OBU 
     log("\n[2/4] Verificando GPS na OBU...", CYAN)
     obu_client = get_ssh_client(obu_ip, obu_user, obu_pass)
     if obu_client:
         obu_gps_ok, obu_date = check_gps_status(obu_client, "OBU")
         
         if obu_gps_ok:
-            log("  ✅ GPS da OBU com fix! Tempo já sincronizado via GPS.", GREEN)
+            log("  [OK] GPS da OBU com fix! Tempo j sincronizado via GPS.", GREEN)
             setup_ntp_client(obu_client, "OBU")
         else:
-            log("  ⚠️  GPS da OBU sem fix. Usando fallback SSH.", YELLOW)
+            log("  [AVISO] GPS da OBU sem fix. Usando fallback SSH.", YELLOW)
             fallback_ssh_sync(obu_client, "OBU")
     else:
-        log("  ❌ Não foi possível conectar na OBU.", RED)
+        log("  [ERRO] No foi possvel conectar na OBU.", RED)
     
-    # ── PASSO 3: Sincronizar PC com RSU via NTP ──
+    #  PASSO 3: Sincronizar PC com RSU via NTP 
     log("\n[3/4] Sincronizando PC com RSU...", CYAN)
     if rsu_client:
         pc_synced = sync_pc_to_rsu(rsu_ip)
         if not pc_synced:
-            log("  [FALLBACK] Sem admin — os timestamps do PC usarão o relógio local.", YELLOW)
-            log("  Dica: Execute 'python sync_gps_time.py' como Administrador para sincronização NTP.", YELLOW)
+            log("  [FALLBACK] Sem admin - os timestamps do PC usaro o relgio local.", YELLOW)
+            log("  Dica: Execute 'python sync_gps_time.py' como Administrador para sincronizao NTP.", YELLOW)
     
-    # ── PASSO 4: Validar sincronização ──
-    log("\n[4/4] Validando sincronização...", CYAN)
+    #  PASSO 4: Validar sincronizao 
+    log("\n[4/4] Validando sincronizao...", CYAN)
     offsets = validate_sync(rsu_client, obu_client)
     
     # Cleanup
@@ -352,15 +352,15 @@ def full_sync():
     
     # Resumo final
     log(f"\n{'='*55}", CYAN)
-    log(f"  📊 RESUMO DA SINCRONIZAÇÃO", CYAN)
+    log(f"  [RESUMO DA SINCRONIZACAO]", CYAN)
     log(f"{'='*55}", CYAN)
-    log(f"  RSU GPS: {'✅ Com Fix' if rsu_gps_ok else '⚠️ Sem Fix (fallback SSH)'}", 
+    log(f"  RSU GPS: {'[OK] Com Fix' if rsu_gps_ok else '[AVISO] Sem Fix (fallback SSH)'}", 
         GREEN if rsu_gps_ok else YELLOW)
-    log(f"  OBU GPS: {'✅ Com Fix' if obu_gps_ok else '⚠️ Sem Fix (fallback SSH)'}",
+    log(f"  OBU GPS: {'[OK] Com Fix' if obu_gps_ok else '[AVISO] Sem Fix (fallback SSH)'}",
         GREEN if obu_gps_ok else YELLOW)
     
     for dev, offset in offsets.items():
-        status = "✅" if offset < 0.1 else ("⚠️" if offset < 1.0 else "❌")
+        status = "[OK]" if offset < 0.1 else ("[AVISO]" if offset < 1.0 else "[ERRO]")
         log(f"  {dev} Offset: {status} {offset*1000:.1f} ms", 
             GREEN if offset < 0.1 else (YELLOW if offset < 1.0 else RED))
     
@@ -371,7 +371,7 @@ def full_sync():
 if __name__ == "__main__":
     success = full_sync()
     if success:
-        log("Sincronização concluída com sucesso! ✅", GREEN)
+        log("Sincronizacao concluida com sucesso! [OK]", GREEN)
     else:
-        log("Sincronização parcial (fallback SSH usado). ⚠️", YELLOW)
-        log("Para precisão GPS PPS, garanta que os dispositivos tenham visão do céu.", YELLOW)
+        log("Sincronizacao parcial (fallback SSH usado). [AVISO]", YELLOW)
+        log("Para precisao GPS PPS, garanta que os dispositivos tenham visao do ceu.", YELLOW)
