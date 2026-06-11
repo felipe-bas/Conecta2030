@@ -69,15 +69,6 @@ def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv
             except Exception:
                 continue
             
-    # Calculate cycle for envios (msg_cnt resets at 127)
-    cycle = 0
-    last_cnt = -1
-    for e in envios:
-        if e['msg_cnt'] < last_cnt:
-            cycle += 1
-        e['cycle'] = cycle
-        last_cnt = e['msg_cnt']
-
     recv = []
     with open(log_recepcao, "r") as f:
         reader = csv.DictReader(f)
@@ -99,39 +90,70 @@ def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv
                 recv.append({'ts_ms': ts_ms, 'msg_cnt': msg_cnt, 'rssi': rssi})
             except Exception:
                 continue
-            
-    cycle = 0
-    last_cnt = -1
-    for r in recv:
-        if r['msg_cnt'] < last_cnt:
-            cycle += 1
-        r['cycle'] = cycle
-        last_cnt = r['msg_cnt']
-        
-    # Match using msg_cnt and cycle
-    recv_dict = {(r['msg_cnt'], r['cycle']): r for r in recv}
+
+    # Agora, precisamos cruzar os dados.
+    # O msg_cnt reseta a cada 128. Se houver perda de pacote, contar "ciclos" falha.
+    # A melhor forma é encontrar o envio com o mesmo msg_cnt que ocorreu MAIS PRÓXIMO 
+    # e ANTES do rx_timestamp (considerando um possível offset de relógio).
+    
+    # Primeiro, vamos descobrir o offset grosseiro comparando o primeiro pacote recebido
+    # com o primeiro pacote enviado (assumindo que o primeiro recebido não atrasou muito).
+    offset_grosseiro = 0
+    if envios and recv:
+        # Pega os primeiros 5 para achar um correspondente
+        for r in recv[:10]:
+            for e in envios[:128]:
+                if e['msg_cnt'] == r['msg_cnt']:
+                    offset_grosseiro = r['ts_ms'] - e['ts_ms']
+                    break
+            if offset_grosseiro != 0:
+                break
     
     recebidos_finais = []
     latencias = []
     rssis = []
     tamanhos = []
+    
+    # Agrupar envios por msg_cnt para busca rápida
+    envios_por_cnt = {}
     for e in envios:
-        key = (e['msg_cnt'], e['cycle'])
-        if key in recv_dict:
-            r = recv_dict[key]
-            lat = r['ts_ms'] - e['ts_ms']
+        envios_por_cnt.setdefault(e['msg_cnt'], []).append(e)
+        
+    for r in recv:
+        cnt = r['msg_cnt']
+        if cnt not in envios_por_cnt:
+            continue
+            
+        possiveis_envios = envios_por_cnt[cnt]
+        
+        # Encontra o envio cujo (ts_envio + offset_grosseiro) está mais próximo do ts_recepcao
+        melhor_envio = None
+        menor_diff = float('inf')
+        
+        for e in possiveis_envios:
+            # Tempo esperado de chegada baseado no offset inicial
+            tempo_esperado = e['ts_ms'] + offset_grosseiro
+            diff = abs(r['ts_ms'] - tempo_esperado)
+            
+            if diff < menor_diff:
+                menor_diff = diff
+                melhor_envio = e
+                
+        if melhor_envio and menor_diff < 10000: # Aceita se descasou no máx 10s do esperado
+            lat = r['ts_ms'] - melhor_envio['ts_ms']
             latencias.append(lat)
             rssis.append(r['rssi'])
-            tamanhos.append(e['size'])
+            tamanhos.append(melhor_envio['size'])
             recebidos_finais.append({
-                'msg_cnt': e['msg_cnt'],
-                'cycle': e['cycle'],
-                'timestamp_envio_ms': e['ts_ms'],
+                'msg_cnt': cnt,
+                'timestamp_envio_ms': melhor_envio['ts_ms'],
                 'rx_timestamp_ms': r['ts_ms'],
                 'latencia_ms': lat,
                 'rssi_dbm': r['rssi'],
-                'size_bytes': e['size']
+                'size_bytes': melhor_envio['size']
             })
+            # Remove para não parear duas vezes
+            possiveis_envios.remove(melhor_envio)
 
     total_enviados = len(envios)
     total_recebidos = len(recebidos_finais)
