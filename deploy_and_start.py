@@ -363,8 +363,9 @@ def main_deploy(mode_ipv6=False, enable_carla=False, test_data=False, rsu_only=F
         log(f"\n[4/4] Transferring files to OBU [{obu_ip}] via SCP...", YELLOW)
         try:
             obu_client = get_ssh_client(obu_ip, OBU_USER, OBU_PASS)
-            log("Killing old obu_alert_server processes...", CYAN)
+            log("Killing old obu_alert_server processes and cleaning logs...", CYAN)
             obu_client.exec_command("killall -9 obu_alert_server")
+            obu_client.exec_command("rm -f /tmp/log_recepcao.csv")
 
             log("Sending obu_alert_server to OBU...", CYAN)
             transfer_file_robust(obu_client, "obu_alert_server", "/tmp/obu_alert_server")
@@ -825,10 +826,11 @@ def run_interactive_simulation(test_data=False):
     msg_count = 0
 
     if test_data:
-        log("\n[TESTE DE DADOS] Modo automatizado ativado! Enviando BSM+PSM+TIM a 10Hz...", YELLOW)
-        interval = 0.1
+        log("\n[TESTE DE DADOS] Modo automatizado ativado! Enviando BSM+PSM+TIM a 1Hz...", YELLOW)
+        interval = 1.0
         ALERT_TYPES = ["bsm", "psm", "tim"]
         gen_list = [(t, MESSAGE_GENERATORS[t]) for t in ALERT_TYPES if t in MESSAGE_GENERATORS]
+        log(f"Iniciando envio contínuo a cada {interval}s...", CYAN)
         
         # Cria arquivo de log
         log_file = open("log_envio_interno.csv", "w")
@@ -836,6 +838,7 @@ def run_interactive_simulation(test_data=False):
         
         try:
             while True:
+                time.sleep(interval)
                 msg_count += 1
                 for name, gen_func in gen_list:
                     msg = json.loads(gen_func(msg_count))
