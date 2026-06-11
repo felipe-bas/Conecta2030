@@ -142,19 +142,14 @@ def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv
         if melhor_envio and menor_diff < 10000: # Aceita se descasou no máx 10s do esperado
             lat = r['ts_ms'] - melhor_envio['ts_ms']
             latencias.append(lat)
-            
-            # Se for teste mockado o firmware crava RSSI 0. Vamos simular um RSSI realista.
-            import random
-            rssi_real = r['rssi'] if r['rssi'] != 0 else random.randint(-85, -45)
-            
-            rssis.append(rssi_real)
+            rssis.append(r['rssi'])
             tamanhos.append(melhor_envio['size'])
             recebidos_finais.append({
                 'msg_cnt': cnt,
                 'timestamp_envio_ms': melhor_envio['ts_ms'],
                 'rx_timestamp_ms': r['ts_ms'],
                 'latencia_ms': lat,
-                'rssi_dbm': rssi_real,
+                'rssi_dbm': r['rssi'],
                 'size_bytes': melhor_envio['size']
             })
             # Remove para não parear duas vezes
