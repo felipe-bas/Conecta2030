@@ -764,6 +764,10 @@ class SocketSender:
         while self.running:
             try:
                 client_sock, addr = self.listen_sock.accept()
+                
+                # Desativa o Nagle's Algorithm para envio imediato (Reduz Latência TCP)
+                client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                
                 log(f"[INFO] New client connected from: {addr}", GREEN)
                 self.clients.append(client_sock)
             except Exception as e:
