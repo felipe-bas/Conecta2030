@@ -828,7 +828,7 @@ def run_interactive_simulation(test_data=False):
         
         # Cria arquivo de log
         log_file = open("log_envio_interno.csv", "w")
-        log_file.write("Seq_ID,Timestamp_Send\n")
+        log_file.write("Seq_ID,Timestamp_Send,size_bytes\n")
         
         try:
             while True:
@@ -842,7 +842,9 @@ def run_interactive_simulation(test_data=False):
                 
                 # Registra apenas o envio do pacote consolidado ou do BSM principal
                 timestamp = int(time.time() * 1000)
-                log_file.write(f"{msg_count},{timestamp}\n")
+                # OBU recebe o count com módulo 128, então precisamos gravar assim também!
+                # E estimamos ~151 bytes por ciclo (BSM+PSM+TIM)
+                log_file.write(f"{msg_count % 128},{timestamp},151\n")
                 log_file.flush()
                 
                 if not sender.clients:
