@@ -6,19 +6,20 @@ Compila código C para arquitetura ARM32 e envia para a OBU e RSU da Commsignia.
 Suporta integração local (CARLA) e remota (DDNS para IPv6).
 """
 
-import sys
 import os
+import sys
 import time
-import subprocess
+import json
 import socket
-import argparse
 import threading
+import subprocess
+import argparse
+from dotenv import load_dotenv
+
+load_dotenv()
 import platform
 import paramiko
 import requests
-from dotenv import load_dotenv
-
-# Carregar variáveis do .env
 load_dotenv()
 
 # ==========================================
@@ -435,8 +436,8 @@ def create_bsm(msg_count):
     """
     sec_mark = int((time.time() * 1000) % 60000)
     # FORCING BSM LOCATION TO MATCH PSM LOCATION FOR IMMEDIATE COLLISION
-    lat_asn = -235497100
-    lon_asn = -466327200
+    lat_asn = -234704040
+    lon_asn = -474326550
     speed_asn = 750  # 15 m/s
 
     json_data = {
@@ -502,8 +503,8 @@ def create_map(msg_count):
                         },
                         "revision": 1,
                         "refPoint": {
-                            "lat": -235500000,
-                            "long": -466330000
+                            "lat": -234704000,
+                            "long": -474326000
                         },
                         "laneSet": [
                             {
@@ -606,8 +607,8 @@ def create_rsa(msg_count):
                 },
                 "extent": "useInstantlyOnly",
                 "position": {
-                    "long": -466335000,
-                    "lat": -235505000,
+                    "long": -474326000,
+                    "lat": -234704000,
                     "elevation": 100
                 },
                 "furtherInfoID": "0000"
@@ -635,8 +636,8 @@ def create_tim(msg_count):
                         "msgId": {
                             "roadSignID": {
                                 "position": {
-                                    "lat": -235502000,
-                                    "long": -466332000,
+                                    "lat": -234704000,
+                                    "long": -474326000,
                                     "elevation": 100
                                 },
                                 "viewAngle": "0000",
@@ -652,8 +653,8 @@ def create_tim(msg_count):
                             {
                                 "name": "zona_escolar",
                                 "anchor": {
-                                    "lat": -235497100,
-                                    "long": -466327200,
+                                    "lat": -234704040,
+                                    "long": -474326550,
                                     "elevation": 100
                                 },
                                 "directionality": "both",
@@ -681,8 +682,8 @@ def create_psm(msg_count):
     """
     sec_mark = int((time.time() * 1000) % 60000)
     # FORCING PSM LOCATION TO MATCH BSM LOCATION FOR IMMEDIATE COLLISION
-    lat_asn = -235497100
-    lon_asn = -466327200
+    lat_asn = -234704040
+    lon_asn = -474326550
 
     json_data = {
         "psm": {
@@ -827,6 +828,68 @@ def run_interactive_simulation(test_data=False):
 
     if test_data:
         log("\n[TESTE DE DADOS] Modo automatizado ativado! Enviando BSM+PSM+TIM a 1Hz...", YELLOW)
+        
+        # Mede e salva o offset exato entre o PC e a OBU no inicio do teste.
+        # Isso substitui o NTP porque a bancada muitas vezes nao tem acesso a internet,
+        # e o SSH (fallback) gera um atraso. Essa medida descobre exatamente qual foi esse atraso.
+        try:
+            import time as time_mod
+            import paramiko
+            
+            obu_ip = os.getenv("OBU_IPV4", "192.168.0.53")
+            obu_user = os.getenv("OBU_USER", "root")
+            obu_pass = os.getenv("OBU_PASS", "root")
+            
+            log(f"Medindo precisao do relogio da OBU ({obu_ip}) via in-band ping-pong...", CYAN)
+            
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(
+                obu_ip,
+                username=obu_user,
+                password=obu_pass,
+                timeout=5,
+                look_for_keys=False,
+                allow_agent=False,
+                disabled_algorithms={'pubkeys': ['rsa-sha2-512', 'rsa-sha2-256']},
+                banner_timeout=30
+            )
+            
+            cmd_sym = """python -u -c "
+import sys, time
+for line in sys.stdin:
+    sys.stdout.write(str(time.time()) + '\\n')
+    sys.stdout.flush()
+"
+"""
+            stdin, stdout, stderr = client.exec_command(cmd_sym)
+            time_mod.sleep(1.0) # wait for python to spawn
+            
+            t1 = time_mod.time()
+            stdin.write('ping\n')
+            stdin.flush()
+            out = stdout.readline().strip()
+            t2 = time_mod.time()
+            
+            # Kill python process
+            stdin.close()
+            client.close()
+            
+            rtt = t2 - t1
+            try:
+                obu_time = float(out)
+                pc_time_at_obu = (t1 + t2) / 2.0
+                offset_s = obu_time - pc_time_at_obu
+                
+                with open("pc_ntp_offset.txt", "w") as f:
+                    f.write(f"{offset_s * 1000.0:.3f}")
+                
+                log(f"[SYNC] Offset do PC medido via SSH (Symmetric): {offset_s*1000.0:+.1f} ms | RTT: {rtt*1000.0:.1f} ms", GREEN)
+            except ValueError:
+                log(f"AVISO: Falha ao ler tempo da OBU. Retorno foi: {out}", YELLOW)
+        except Exception as e:
+            log(f"Erro ao medir offset da OBU: {e}", RED)
+            
         interval = 1.0
         ALERT_TYPES = ["bsm", "psm", "tim"]
         gen_list = [(t, MESSAGE_GENERATORS[t]) for t in ALERT_TYPES if t in MESSAGE_GENERATORS]

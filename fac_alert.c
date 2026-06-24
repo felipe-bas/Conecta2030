@@ -244,7 +244,7 @@ int main(int argc, char *argv[]) {
     send_hdr.radio.datarate = 0;
     memcpy(send_hdr.radio.dest_address, BROADCAST_ADDR, CMS_MAC_ADDRESS_LENGTH);
     send_hdr.radio.expiry_time = 0;
-    send_hdr.radio.interface_id = 1; // Use C-V2X interface (qc9150)
+    send_hdr.radio.interface_id = 513; // Use C-V2X interface (qc9150, typically 513)
     send_hdr.radio.sps_index = 0;
     send_hdr.radio.tx_power = 0;
     send_hdr.radio.user_prio = 0;

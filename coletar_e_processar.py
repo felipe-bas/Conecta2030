@@ -3,7 +3,55 @@ import argparse
 import paramiko
 import csv
 import math
+import time
+import struct
+import socket
 from dotenv import load_dotenv
+
+def get_ntp_offset(server="a.st1.ntp.br", timeout=5):
+    """
+    Consulta um servidor NTP e retorna o offset do relogio local em SEGUNDOS.
+    Offset positivo = relogio local esta ADIANTADO em relacao ao tempo real.
+    Offset negativo = relogio local esta ATRASADO.
+    Nao requer privilegios de administrador.
+    """
+    NTP_EPOCH = 2208988800  # diff entre 1900 e 1970 em segundos
+    
+    try:
+        # Monta pacote NTP (versao 3, modo cliente)
+        msg = b'\x1b' + 47 * b'\0'
+        
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(timeout)
+        
+        t1 = time.time()  # Timestamp de envio local
+        sock.sendto(msg, (server, 123))
+        data, _ = sock.recvfrom(1024)
+        t4 = time.time()  # Timestamp de recebimento local
+        sock.close()
+        
+        if len(data) < 48:
+            return None
+        
+        # Extrai timestamps do servidor NTP
+        # t2 = receive timestamp (quando o servidor recebeu nosso pacote)
+        t2_int = struct.unpack('!I', data[32:36])[0] - NTP_EPOCH
+        t2_frac = struct.unpack('!I', data[36:40])[0] / (2**32)
+        t2 = t2_int + t2_frac
+        
+        # t3 = transmit timestamp (quando o servidor enviou a resposta)
+        t3_int = struct.unpack('!I', data[40:44])[0] - NTP_EPOCH
+        t3_frac = struct.unpack('!I', data[44:48])[0] / (2**32)
+        t3 = t3_int + t3_frac
+        
+        # Offset = ((t2 - t1) + (t3 - t4)) / 2
+        offset = ((t2 - t1) + (t3 - t4)) / 2.0
+        
+        return offset
+        
+    except Exception as e:
+        print(f"[AVISO] Falha ao consultar NTP ({server}): {e}")
+        return None
 
 # Reutiliza as lógicas de conexão robusta desenvolvidas
 def get_ssh_client(ip, username, password):
@@ -25,6 +73,24 @@ def get_ssh_client(ip, username, password):
 
 def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv"):
     print("\n--- INICIANDO PROCESSAMENTO DE MÉTRICAS ---")
+    
+    # Mede o offset do relogio do PC em relacao ao tempo atomico (NTP)
+    pc_offset_ms = 0.0
+    
+    if os.path.exists("pc_ntp_offset.txt"):
+        with open("pc_ntp_offset.txt", "r") as f:
+            try:
+                pc_offset_ms = float(f.read().strip())
+                print(f"[SYNC] Offset lido do teste: {pc_offset_ms:+.1f} ms.")
+                print(f"[SYNC] A latencia ficara matematicamente exata e travada (sem jitter NTP).")
+            except:
+                pass
+                
+    if pc_offset_ms == 0.0:
+        print("[AVISO] pc_ntp_offset.txt nao encontrado!")
+        print("A latencia podera sair negativa ou irreal devido a falta de sincronizacao.")
+        print("Rode o 'deploy_and_start.py --teste_dados' novamente para gerar este arquivo.")
+    
     if not os.path.exists(log_envio):
         print(f"[ERRO] {log_envio} não encontrado. Não é possível calcular latência.")
         return
@@ -51,6 +117,11 @@ def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv
                     ts = ts_raw * 1000.0
                 else: # se já for em ms (e.g. 1780428282332)
                     ts = ts_raw
+                
+                # Corrige o timestamp de envio com o offset NTP do PC
+                # NTP: tempo_real = tempo_local + offset
+                # Se offset = -168ms (PC adiantado), subtraimos 168ms do timestamp
+                ts += pc_offset_ms
                 
                 # find msg_cnt
                 if 'msg_cnt' in row:
@@ -160,14 +231,15 @@ def processar_metricas(log_envio, log_recepcao, output_file="metricas_finais.csv
     pdr = (total_recebidos / total_enviados * 100) if total_enviados > 0 else 0
     
     # Corrige problemas de relógios dessincronizados (ex: OBU com horas de diferença do PC)
-    if latencias and (min(latencias) < 0 or sum(latencias)/len(latencias) > 60000):
-        # Assume que o pacote mais rápido levou 5ms
-        min_lat = min(latencias)
-        offset = 5.0 - min_lat
-        print(f"[AVISO] Relógios dessincronizados detectados. Aplicando offset de {offset/1000:.2f}s para ajustar a latência relativa.")
-        latencias = [l + offset for l in latencias]
-        for r in recebidos_finais:
-            r['latencia_ms'] += offset
+    # AVISO: Comentado para NÃO mascarar a latência da VPN. 
+    # Queremos ver a latência bruta (verdadeira). Os relógios devem estar sincronizados via NTP.
+    # if latencias and (min(latencias) < 0 or sum(latencias)/len(latencias) > 60000):
+    #     min_lat = min(latencias)
+    #     offset = 5.0 - min_lat
+    #     print(f"[AVISO] Relógios dessincronizados detectados. Aplicando offset de {offset/1000:.2f}s para ajustar a latência relativa.")
+    #     latencias = [l + offset for l in latencias]
+    #     for r in recebidos_finais:
+    #         r['latencia_ms'] += offset
     
     latencia_media = sum(latencias) / len(latencias) if latencias else 0
     if latencias:

@@ -10,3 +10,11 @@ carla/
 
 .env
 *.csv
+
+# Diagnostic and temporary scripts
+diag_*.py
+check_*.py
+reboot_*.py
+restart_*.py
+temp_offset.py
+test_sym.py

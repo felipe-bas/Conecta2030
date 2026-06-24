@@ -48,10 +48,12 @@ def get_ssh_client(ip, username, password):
         return None
 
 def ssh_exec(client, cmd, timeout=10):
-    """Executa comando SSH e retorna stdout."""
+    """Executa comando SSH e retorna stdout + stderr."""
     try:
         stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout)
-        return stdout.read().decode('utf-8', errors='ignore').strip()
+        out = stdout.read().decode('utf-8', errors='ignore').strip()
+        err = stderr.read().decode('utf-8', errors='ignore').strip()
+        return (out + " " + err).strip()
     except Exception as e:
         return f"ERRO: {e}"
 
@@ -144,12 +146,34 @@ def setup_ntp_client(client, device_name):
     ssh_exec(client, "/etc/init.d/sysntpd restart")
     log(f"   NTP habilitado em {device_name}", GREEN)
 
+def fallback_ntp_sync(client, device_name):
+    """
+    Fallback 1: Tenta sincronizar a hora via NTP publico da internet.
+    Isso garante que a latencia da VPN fique exposta.
+    """
+    log(f"\n  [FALLBACK] Sincronizando {device_name} com servidor NTP da internet...", YELLOW)
+    cmd = "ntpd -n -q -p a.st1.ntp.br -p b.st1.ntp.br"
+    result = ssh_exec(client, cmd, timeout=20)
+    
+    # Se ntp.br falhar, tentamos pool.ntp.org
+    if "ERRO" in result or "timeout" in result.lower() or "bad" in result.lower():
+        cmd = "ntpd -n -q -p pool.ntp.org"
+        result = ssh_exec(client, cmd, timeout=20)
+        
+    if "ERRO" not in result and ("set" in result.lower() or "ntpd" in result.lower() or result.strip() == ""):
+        # Verifica se atualizou (o busybox ntpd as vezes nao printa nada no sucesso)
+        log(f"  [OK] {device_name} sincronizado via NTP da internet!", GREEN)
+        return True
+    else:
+        log(f"  [AVISO] Falha ao sincronizar {device_name} via NTP (Sem internet?). Recorrendo ao SSH...", YELLOW)
+        return False
+
 def fallback_ssh_sync(client, device_name):
     """
-    Fallback: Se o GPS no tiver fix, sincroniza via SSH 
-    usando a hora do PC como referncia.
+    Fallback 2: Se o GPS nao tiver fix e nao tiver internet, sincroniza via SSH 
+    usando a hora do PC como referencia. (Isto mascara a VPN!)
     """
-    log(f"\n  [FALLBACK] Sincronizando {device_name} com a hora do PC...", YELLOW)
+    log(f"\n  [FALLBACK] Sincronizando {device_name} com a hora do PC (Isso mascarara a latencia da rede)...", YELLOW)
     
     # Pega a hora UTC do PC
     now_utc = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
@@ -311,8 +335,9 @@ def full_sync():
             log("  [OK] GPS da RSU com fix! Usando como referncia de tempo.", GREEN)
             setup_ntp_server(rsu_client, "RSU")
         else:
-            log("  [AVISO] GPS da RSU sem fix. Usando fallback SSH.", YELLOW)
-            fallback_ssh_sync(rsu_client, "RSU")
+            log("  [AVISO] GPS da RSU sem fix. Tentando NTP Publico...", YELLOW)
+            if not fallback_ntp_sync(rsu_client, "RSU"):
+                fallback_ssh_sync(rsu_client, "RSU")
             setup_ntp_server(rsu_client, "RSU")  # Ainda habilita NTP server
     else:
         log("  [ERRO] No foi possvel conectar na RSU.", RED)
@@ -327,8 +352,9 @@ def full_sync():
             log("  [OK] GPS da OBU com fix! Tempo j sincronizado via GPS.", GREEN)
             setup_ntp_client(obu_client, "OBU")
         else:
-            log("  [AVISO] GPS da OBU sem fix. Usando fallback SSH.", YELLOW)
-            fallback_ssh_sync(obu_client, "OBU")
+            log("  [AVISO] GPS da OBU sem fix. Tentando NTP Publico...", YELLOW)
+            if not fallback_ntp_sync(obu_client, "OBU"):
+                fallback_ssh_sync(obu_client, "OBU")
     else:
         log("  [ERRO] No foi possvel conectar na OBU.", RED)
     

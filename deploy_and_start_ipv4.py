@@ -31,7 +31,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
         pass
 
 # Configuration
-RSU_IP = "192.168.0.50"
+RSU_IP = "192.168.0.54"
 RSU_USER = "root"
 RSU_PASS = "Conect@2024"
 RSU_PORT = 8080
@@ -238,8 +238,8 @@ def create_bsm(msg_count):
     """
     sec_mark = int((time.time() * 1000) % 60000)
     # FORCING BSM LOCATION TO MATCH PSM LOCATION FOR IMMEDIATE COLLISION
-    lat_asn = -235497100
-    lon_asn = -466327200
+    lat_asn = -234704040
+    lon_asn = -474326550
     speed_asn = 750  # 15 m/s
 
     json_data = {
@@ -305,8 +305,8 @@ def create_map(msg_count):
                         },
                         "revision": 1,
                         "refPoint": {
-                            "lat": -235500000,
-                            "long": -466330000
+                            "lat": -234704000,
+                            "long": -474326000
                         },
                         "laneSet": [
                             {
@@ -409,8 +409,8 @@ def create_rsa(msg_count):
                 },
                 "extent": "useInstantlyOnly",
                 "position": {
-                    "long": -466335000,
-                    "lat": -235505000,
+                    "long": -474326000,
+                    "lat": -234704000,
                     "elevation": 100
                 },
                 "furtherInfoID": "0000"
@@ -438,8 +438,8 @@ def create_tim(msg_count):
                         "msgId": {
                             "roadSignID": {
                                 "position": {
-                                    "lat": -235502000,
-                                    "long": -466332000,
+                                    "lat": -234704000,
+                                    "long": -474326000,
                                     "elevation": 100
                                 },
                                 "viewAngle": "0000",
@@ -455,8 +455,8 @@ def create_tim(msg_count):
                             {
                                 "name": "zona_escolar",
                                 "anchor": {
-                                    "lat": -235497100,
-                                    "long": -466327200,
+                                    "lat": -234704040,
+                                    "long": -474326550,
                                     "elevation": 100
                                 },
                                 "directionality": "both",
@@ -484,8 +484,8 @@ def create_psm(msg_count):
     """
     sec_mark = int((time.time() * 1000) % 60000)
     # FORCING PSM LOCATION TO MATCH BSM LOCATION FOR IMMEDIATE COLLISION
-    lat_asn = -235497100
-    lon_asn = -466327200
+    lat_asn = -234704040
+    lon_asn = -474326550
 
     json_data = {
         "psm": {
