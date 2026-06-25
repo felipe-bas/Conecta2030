@@ -25,7 +25,7 @@
 #define BUFFER_SIZE 16384
 #define RECONNECT_DELAY_SEC 2
 
-static const cms_psid_t PSID = 0x87UL; /* Non p-encoded PSID */
+static const cms_psid_t PSID = 0x20UL; /* Standard BSM PSID */
 
 void json_to_uper(const char *json_buf, cms_session_t session, cms_wsmp_send_data_t send_hdr);
 static bool send_message(uint8_t *msg_payload, size_t data_len, cms_session_t session, cms_wsmp_send_data_t send_hdr);
@@ -168,6 +168,17 @@ void json_to_uper(const char *json_buf, cms_session_t session, cms_wsmp_send_dat
             uint8_t byte_array[byte_array_len];
             
             hex_to_uint8_t_array(hex_str, byte_array);
+
+            cms_psid_t dynamic_psid = 0x20UL; // Default BSM
+            if (strcmp(found_key, "bsm") == 0) dynamic_psid = 0x20UL;
+            else if (strcmp(found_key, "spat") == 0) dynamic_psid = 0x8002UL;
+            else if (strcmp(found_key, "mapData") == 0) dynamic_psid = 0xE0000017UL;
+            else if (strcmp(found_key, "tim") == 0) dynamic_psid = 0x8003UL;
+            else if (strcmp(found_key, "rsa") == 0) dynamic_psid = 0x800BUL;
+            else if (strcmp(found_key, "psm") == 0) dynamic_psid = 0x27UL;
+
+            send_hdr.wsmp_hdr.psid = dynamic_psid;
+            send_hdr.security.sign_info.psid = dynamic_psid;
 
             send_message(byte_array, ret, session, send_hdr);
         }

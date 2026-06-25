@@ -34,7 +34,7 @@ Decodes UPER to JSON, forwards to connected tablet client(s).
 */
 
 #define PORT 8080
-#define FILTER_PSID 0x87UL
+#define FILTER_PSID 0x20UL
 #define MAX_CLIENTS 10
 
 /* Context type for the notification callback */
@@ -454,7 +454,7 @@ int main(int argc, char* argv[])
     /* Subscribe to a specific PSID */
     cms_subs_id_t filtered_subs_id = CMS_SUBS_ID_INVALID;
     error = error || cms_wsmp_rx_subscribe(&session,
-                                           FILTER_PSID,
+                                           CMS_WSMP_SUBSCRIBE_WILDCARD,
                                            &wsmp_rx_notif_cb,
                                            &filtered_ctx,
                                            &filtered_subs_id);
